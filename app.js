@@ -5,6 +5,7 @@ var http = require('http');
 var https = require('https');
 var fs = require('fs');
 
+
 const app = express()
 app.use(express.json());
 
@@ -18,6 +19,8 @@ let credentials = {key: privateKey, cert: certificate, ca: ca};
 let httpsServer = https.createServer(credentials, app);
 httpsServer.listen(9999, '213.139.208.31');
 
+// connect socket.io
+var io = require('socket.io')(httpsServer);
 
 /*
 // ssl cert install
@@ -30,9 +33,8 @@ server.listen(80, (err) => {
 })
 */
 
-//let db = require('./modules/db')();
-
 app.use('/public', express.static(__dirname + '/public'))
+app.use('/out', express.static(__dirname + '/out'))
 
 app.engine('.hbs', exphbs({
   defaultLayout: 'main',
@@ -49,8 +51,7 @@ app.set('view engine', '.hbs')
 app.set('views', path.join(__dirname, 'views'))
 
 
-
 require('./routes')(app);
-require('./api')(app);
+require('./api')(app, io);
 
 console.log('Started');

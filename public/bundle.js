@@ -116,7 +116,7 @@ eval("// shim for using process in browser\nvar process = module.exports = {};\n
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-eval("__webpack_require__.r(__webpack_exports__);\n/* harmony import */ var axios_dist_axios_min_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! axios/dist/axios.min.js */ \"./node_modules/axios/dist/axios.min.js\");\n/* harmony import */ var axios_dist_axios_min_js__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(axios_dist_axios_min_js__WEBPACK_IMPORTED_MODULE_0__);\n\n\n//# sourceURL=webpack:///./src/index.js?");
+eval("__webpack_require__.r(__webpack_exports__);\n/* harmony import */ var axios_dist_axios_min_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! axios/dist/axios.min.js */ \"./node_modules/axios/dist/axios.min.js\");\n/* harmony import */ var axios_dist_axios_min_js__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(axios_dist_axios_min_js__WEBPACK_IMPORTED_MODULE_0__);\n//import \"babel-polyfill\";\n\n\n//# sourceURL=webpack:///./src/index.js?");
 
 /***/ })
 

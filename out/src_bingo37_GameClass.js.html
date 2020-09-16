@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: src/bingo37_GameClass.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: src/bingo37_GameClass.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>'use strict';
+
+/** Class representing a game Bingo37 */
+export class Bingo37 {
+  #context;
+  #availableAreasForBets = []; // array of all cells that can be used for placing chips
+  #cellSize = 0;
+  #cellOffset = 0;
+  #chips = [];
+  #betHistory = [];
+  #currentNumberOfChip = 0;
+  #currentPriceOfChip = 10;
+  #allBetsArr = [];
+  finalListOfBets = [];
+
+  /**
+   * Represents a game Bingo 37.
+   * @constructor
+   * @param {String} nodeName - selector of container with empty canvas
+   */
+  constructor(nodeName) {
+    // game-container DOM element
+    this.gameContainer = document.querySelector(nodeName);
+    // canvas DOM element
+    this.canvasNode = document.querySelector(nodeName).querySelector('canvas');
+    // canvas 2Dcontext
+    this.#context = this.canvasNode.getContext("2d");
+  }
+
+  /**
+  * Loads all the necessary functions for the game
+  * @returns {void}
+  */
+  load() {
+    this.#adaptive();
+    this.#generateControls();
+
+    window.onload = () => {
+      this.#generateTable();
+    }
+
+    this.canvasNode.onclick = (e) => {
+      var x = ((e.pageX - e.target.offsetLeft) / 0.25) | 0;
+      var y = ((e.pageY - e.target.offsetTop) / 0.25) | 0;
+      this.#newSelect(x, y);
+    }
+  }
+
+
+
+  get getBets() {
+    return this.finalListOfBets;
+  }
+
+
+
+  /**
+  * Comparison of two arrays for equivalence
+  * @method compare
+  * @memberof Bingo37
+  * @param {Array} a1 - The first array
+  * @param {Array} a2 - The second array
+  * @returns {boolean} Are the two arrays equivalent
+  */
+  #compare (a1, a2) {
+    return a1.length == a2.length &amp;&amp; a1.every((v,i)=>v === a2[i])
+  }
+
+
+
+  /**
+  * Compare Function - normal sorting of numbers in an array
+  * @method compareNumericSortMethod
+  * @memberof Bingo37
+  * @returns {number} Element position in sorted array
+  */
+  #compareNumericSortMethod(a, b) {
+    return a-b;
+  }
+
+
+
+  /**
+  * This function is responsible for the initial drawing of the canvas and determining the size of cells
+  * @method adaptive
+  * @memberof Bingo37
+  * @returns {void}
+  */
+  #adaptive() {
+    // get width of screen
+    let clientWidth = document.body.clientWidth;
+
+    // set cellSize and cellOffset
+    this.#cellSize = Math.round(clientWidth / 15)*4; // 4x resolution
+    this.#cellOffset = Math.round(clientWidth / 15)*4; // 4x resolution
+
+    // set canvas sizes
+    this.canvasNode.width = clientWidth*4; // 4x resolution
+    this.canvasNode.height = this.#cellSize*3;
+    this.canvasNode.style.width = clientWidth+'px';
+  }
+
+
+
+  /**
+  * This function handles clicks on the chips
+  * @method chipOnClick
+  * @memberof Bingo37
+  * @param {event} e - event object
+  * @returns {void}
+  */
+  #chipOnClick(e) {
+    this.#currentNumberOfChip = e.target.getAttribute('data-chip-number');
+    this.#currentPriceOfChip = e.target.getAttribute('data-chip-price');
+  }
+
+
+
+  /**
+  * This function handles clicks on UnDo button
+  * @method buttonUndoOnClick
+  * @memberof Bingo37
+  * @returns {void}
+  */
+  #buttonUndoOnClick() {
+    if (this.#betHistory.length) {
+      // delete last bet from #allBetsArr and finalListOfBets
+      let lastBet = this.#allBetsArr.pop();
+      this.finalListOfBets.forEach((betItem, index) => {
+        if(this.#compare(betItem.bet, lastBet)) {
+          --betItem.count;
+          if(betItem.count == 0) this.finalListOfBets.splice(index, 1);
+          else betItem.money.pop();
+        }
+      })
+      // clear canvas and set previous stamp
+      this.#context.clearRect(0, 0, this.canvasNode.width, this.canvasNode.height);
+      this.#context.putImageData(this.#betHistory.pop(), 0, 0);
+    }
+  }
+
+
+
+  /**
+  * This function handles clicks on Clear button
+  * @method buttonClearOnClick
+  * @memberof Bingo37
+  * @returns {void}
+  */
+  #buttonClearOnClick() {
+    if (this.#betHistory.length) {
+      // clear #allBetsArr and finalListOfBets
+      this.#allBetsArr = [];
+      this.finalListOfBets = [];
+      // clear canvas and set fitst stamp
+      this.#context.clearRect(0, 0, this.canvasNode.width, this.canvasNode.height);
+      this.#context.putImageData(this.#betHistory[0], 0, 0);
+      this.#betHistory = [this.#betHistory[0]];
+    }
+  }
+
+
+
+  /**
+  * This function creates a new DOM element with game controls (chips, buttons)
+  * @method generateControls
+  * @memberof Bingo37
+  * @returns {void}
+  */
+  #generateControls(){
+    let controlsDiv = document.createElement('div');
+
+    let chip, price;
+    for (var i = 0; i &lt; 2; i++) {
+      // select price for chip
+      price = (i == 0) ? 10 : (i == 1) ? 50 : 10;
+      // create chip image
+      chip = new Image();
+      chip.src = './public/games/bingo37/img/chip'+price+'.png';
+      chip.setAttribute('data-chip-price', price);
+      chip.setAttribute('data-chip-number', i);
+      // push chip to array
+      this.#chips.push(chip);
+      // set click listner
+      chip.onclick = (e) => this.#chipOnClick(e);
+
+      controlsDiv.appendChild(chip);
+    }
+
+    // create UnDo button
+    let buttonUndo = document.createElement('button');
+    buttonUndo.innerHTML = 'Отменить';
+    buttonUndo.onclick = () => this.#buttonUndoOnClick();
+    controlsDiv.appendChild(buttonUndo);
+
+    // create Clear button
+    let buttonClear = document.createElement('button');
+    buttonClear.innerHTML = 'Очистить';
+    buttonClear.onclick = () => this.#buttonClearOnClick();
+    controlsDiv.appendChild(buttonClear);
+
+    // draw DOM elements in game-container
+    this.gameContainer.appendChild(controlsDiv);
+  }
+
+
+
+  /**
+  * This function generates a game table. Now it's 3 square!
+  * @method generateTable
+  * @memberof Bingo37
+  * @returns {void}
+  */
+  #generateTable() {
+    let cellNumber = 0;
+    let offset, textX, textY;
+
+    // set styles for table draw
+    this.#context.fillStyle = "#FF0000";
+    this.#context.lineWidth = 4; // 4x resolution
+    this.#context.textAlign = "center";
+    this.#context.textBaseline = "middle";
+    this.#context.font = (this.#cellSize)/2+"px serif";
+
+    // draw 1-st square of numbers
+    for (let x = 0; x &lt; this.#cellSize*4; x += this.#cellSize) {
+      for (let y = this.#cellSize*2; y >= 0; y -= this.#cellSize) {
+        this.#context.strokeRect(x, y, this.#cellSize, this.#cellSize);
+        textX = x + (this.#cellSize)/2;
+        textY = y + (this.#cellSize)/2;
+        this.#context.fillText(++cellNumber, textX, textY);
+        this.#availableAreasForBets.push({num: cellNumber, xMin: x, yMin: y, xMax: x+this.#cellSize, yMax: y+this.#cellSize});
+      }
+    }
+
+    // draw 2-nd square of numbers
+    offset = this.#cellSize*4+this.#cellOffset;
+    for (let x = offset; x &lt; offset+this.#cellSize*4; x += this.#cellSize) {
+      for (let y = this.#cellSize*2; y >= 0; y -= this.#cellSize) {
+        this.#context.strokeRect(x, y, this.#cellSize, this.#cellSize);
+        textX = x + (this.#cellSize)/2;
+        textY = y + (this.#cellSize)/2;
+        this.#context.fillText(++cellNumber, textX, textY);
+        this.#availableAreasForBets.push({num: cellNumber, xMin: x, yMin: y, xMax: x+this.#cellSize, yMax: y+this.#cellSize});
+      }
+    }
+
+    // draw 3-rd square of numbers
+    offset = offset*2;
+    for (let x = offset; x &lt; offset+this.#cellSize*4; x += this.#cellSize) {
+      for (let y = this.#cellSize*2; y >= 0; y -= this.#cellSize) {
+        this.#context.strokeRect(x, y, this.#cellSize, this.#cellSize);
+        textX = x + (this.#cellSize)/2;
+        textY = y + (this.#cellSize)/2;
+        this.#context.fillText(++cellNumber, textX, textY);
+        this.#availableAreasForBets.push({num: cellNumber, xMin: x, yMin: y, xMax: x+this.#cellSize, yMax: y+this.#cellSize});
+      }
+    }
+  }
+
+
+
+  /**
+  * The function records the current version of the table for later canceling or clearing the table
+  * @method betHistoryCreateStamp
+  * @memberof Bingo37
+  * @returns {void}
+  */
+  #betHistoryCreateStamp () {
+    let copy = this.#context.getImageData(0, 0, this.canvasNode.width, this.canvasNode.height);
+    this.#betHistory.push(copy);
+  };
+
+
+
+  /**
+  * The function searches for which cell(s) were clicked
+  * @method newSelect
+  * @memberof Bingo37
+  * @param {int} x - X coordinate of the click
+  * @param {int} y - Y coordinate of the click
+  * @return {void}
+  */
+  #newSelect(x, y) {
+    let clickArr = [];
+    this.#availableAreasForBets.forEach((item) => {
+      let XRelativeCell = 0, YRelativeCell = 0;
+      if(x > item.xMin &amp;&amp; x &lt; item.xMax &amp;&amp; y > item.yMin &amp;&amp; y &lt; item.yMax) {
+
+        // create history stamp
+        this.#betHistoryCreateStamp();
+
+        // coordinates relative to the cell (not the table)
+        XRelativeCell = x - item.xMin;
+        YRelativeCell = y - item.yMin;
+
+        // looking for an adjacent cell, get chip offsets and array of clicked elements
+        let adjacentCellsWithChipOffset = this.#lookingForAnAdjacentCell(item, XRelativeCell, YRelativeCell);
+
+        // adding adjacent cells numbers to array of clicked cells
+        clickArr = adjacentCellsWithChipOffset.cells;
+        // adding the first clicked cell number of the clicked cell to the array
+        clickArr.push(item.num);
+
+        // new chip coordinates
+        let newX = item.xMin + adjacentCellsWithChipOffset.offsetX + (this.#cellSize)/5*1;
+        let newY = item.yMin + adjacentCellsWithChipOffset.offsetY + (this.#cellSize)/5*1;
+        // draw chip
+        this.#context.drawImage(this.#chips[this.#currentNumberOfChip], newX, newY, (this.#cellSize)/5*3, (this.#cellSize)/5*3);
+
+
+        clickArr.sort(this.#compareNumericSortMethod);
+        this.#allBetsArr.push(clickArr);
+
+        // add new bet to finalListOfBets
+        if(this.finalListOfBets.some( element => this.#compare(element.bet, clickArr))) {
+          this.finalListOfBets.forEach((betItem) => {
+            if(this.#compare(betItem.bet, clickArr)) {
+              betItem.count++;
+              betItem.money.push(+this.#currentPriceOfChip);
+            }
+          })
+        } else {
+          this.finalListOfBets.push({bet: clickArr, money: [+this.#currentPriceOfChip], count: 1});
+        }
+
+        console.log('betArr', this.#allBetsArr);
+        console.log('betArrCount', this.finalListOfBets);
+
+      }
+    });
+
+  }
+
+
+
+  /**
+  * The function searches for which cell(s) were clicked
+  * @method lookingForAnAdjacentCell
+  * @memberof Bingo37
+  * @param {Object} item - data about current clicked cell
+  * @param {int} XRelativeCell - X coordinate relative to the clicked cell
+  * @param {int} YRelativeCell - Y coordinate relative to the clicked cell
+  * @return {Object} Cells (array of adjacent cells), offsetX, offsetY
+  */
+  #lookingForAnAdjacentCell(item, XRelativeCell, YRelativeCell) {
+    let clickArr = [];
+    let offsetX = 0, offsetY = 0, position = '';
+
+    if(XRelativeCell &lt; (this.#cellSize)/5) {
+      // clicked to the LEFT of the center of the cell, looking for an adjacent cell
+      position = 'left';
+      this.#availableAreasForBets.forEach((itemN) => {
+        if(itemN.xMax == item.xMin &amp;&amp; itemN.yMin == item.yMin) {
+          offsetX = -(this.#cellSize)/2;
+          clickArr.push(itemN.num);
+        }
+      })
+    }
+    if(XRelativeCell > (this.#cellSize)/5*4) {
+      // clicked to the RIGHT of the center of the cell, looking for an adjacent cell
+      position = 'right';
+      this.#availableAreasForBets.forEach((itemN) => {
+        if(itemN.xMin == item.xMax &amp;&amp; itemN.yMin == item.yMin) {
+          offsetX = (this.#cellSize)/2;
+          clickArr.push(itemN.num);
+        }
+      })
+    }
+
+    if(YRelativeCell &lt; (this.#cellSize)/5) {
+      // clicked ABOVE the center of the cell, looking for an adjacent cell
+      if(position == 'left') {
+        this.#availableAreasForBets.forEach((itemN) => {
+          if(itemN.yMax == item.yMin &amp;&amp; itemN.xMax == item.xMin) clickArr.push(itemN.num);
+        })
+      }
+
+      if(position == 'right') {
+        this.#availableAreasForBets.forEach((itemN) => {
+          if(itemN.yMax == item.yMin &amp;&amp; itemN.xMin == item.xMax) clickArr.push(itemN.num);
+        })
+      }
+
+      this.#availableAreasForBets.forEach((itemN) => {
+        if(itemN.yMax == item.yMin &amp;&amp; itemN.xMin == item.xMin) {
+          offsetY = -(this.#cellSize)/2;
+          clickArr.push(itemN.num);
+        }
+      })
+    }
+    if(YRelativeCell > (this.#cellSize)/5*4) {
+      // clicked BELOW the center of the cell, looking for an adjacent cell
+      this.#availableAreasForBets.forEach((itemN) => {
+        if(itemN.yMin == item.yMax &amp;&amp; itemN.xMin == item.xMin) {
+          offsetY = (this.#cellSize)/2;
+          clickArr.push(itemN.num);
+        }
+      })
+
+      if(position == 'left') {
+        this.#availableAreasForBets.forEach((itemN) => {
+          if(itemN.yMin == item.yMax &amp;&amp; itemN.xMax == item.xMin) clickArr.push(itemN.num);
+        })
+      }
+
+      if(position == 'right') {
+        this.#availableAreasForBets.forEach((itemN) => {
+          if(itemN.yMin == item.yMax &amp;&amp; itemN.xMin == item.xMax) clickArr.push(itemN.num);
+        })
+      }
+    }
+
+    return {cells: clickArr, offsetX: offsetX, offsetY: offsetY};
+  } // end of #lookingForAnAdjacentCell
+
+
+} // end of class</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-api_games_bingo37.html">api/games/bingo37</a></li></ul><h3>Classes</h3><ul><li><a href="Bingo37.html">Bingo37</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.5</a> on Wed Sep 16 2020 03:58:36 GMT+0000 (Coordinated Universal Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

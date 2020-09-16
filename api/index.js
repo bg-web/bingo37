@@ -1,3 +1,3 @@
-module.exports = function (app) {
-  require('./bingo37/bet')(app);
+module.exports = function (app, io) {
+  require('./games/bingo37.js')(app, io);
 };
