@@ -1,4 +1,5 @@
 'use strict';
+import io from "socket.io-client/dist/socket.io.js"
 
 /** Class representing a game Bingo37 */
 export class Bingo37 {
@@ -12,19 +13,25 @@ export class Bingo37 {
   #currentPriceOfChip = 10;
   #allBetsArr = [];
   finalListOfBets = [];
+  #renderedChips = [];
+  #chipsPrices = [];
+  #tableIsBlocked = false;
 
   /**
    * Represents a game Bingo 37.
    * @constructor
    * @param {String} nodeName - selector of container with empty canvas
+   * @param {Object} externalCounters - object with NodeElements of win, step, time
    */
-  constructor(nodeName) {
+  constructor(nodeName, externalCounters) {
     // game-container DOM element
     this.gameContainer = document.querySelector(nodeName);
     // canvas DOM element
     this.canvasNode = document.querySelector(nodeName).querySelector('canvas');
     // canvas 2Dcontext
     this.#context = this.canvasNode.getContext("2d");
+    // external game info NodeElements
+    this.externalCounters = externalCounters;
   }
 
   /**
@@ -32,20 +39,32 @@ export class Bingo37 {
   * @returns {void}
   */
   load() {
-    this.#adaptive();
-    this.#generateControls();
-
     window.onload = () => {
+      this.#adaptive();
+      this.#generateControls();
       this.#generateTable();
+      this.#sockets();
     }
 
     this.canvasNode.onclick = (e) => {
+      if(this.#tableIsBlocked) return false;
       var x = ((e.pageX - e.target.offsetLeft) / 0.25) | 0;
       var y = ((e.pageY - e.target.offsetTop) / 0.25) | 0;
       this.#newSelect(x, y);
     }
   }
 
+
+  on( event, handler ) {
+    this.gameContainer.addEventListener('sumchanged', () => {
+      let result = 0, sum;
+      this.finalListOfBets.forEach(betItem => {
+        sum = betItem.money.reduce((sum, current) => sum + current, 0);
+        result += sum;
+      })
+      handler(result)
+    })
+  }
 
 
   get getBets() {
@@ -88,16 +107,22 @@ export class Bingo37 {
   */
   #adaptive() {
     // get width of screen
-    let clientWidth = document.body.clientWidth;
+    let clientWidth = parseInt(this.canvasNode.clientWidth, 10);
+    //clientWidth = 2475;
 
     // set cellSize and cellOffset
-    this.#cellSize = Math.round(clientWidth / 15)*4; // 4x resolution
-    this.#cellOffset = Math.round(clientWidth / 15)*4; // 4x resolution
+    this.#cellSize = Math.round(clientWidth*4 / 20.75); // 4x resolution
+    this.#cellOffset = Math.round(clientWidth*4 / 41.5); // 4x resolution
+
+    console.log('this.#cellSize', this.#cellSize);
+    console.log('this.#cellOffset', this.#cellOffset);
 
     // set canvas sizes
-    this.canvasNode.width = clientWidth*4; // 4x resolution
-    this.canvasNode.height = this.#cellSize*3;
+    this.canvasNode.width = (clientWidth+4)*4; // 4x resolution
+    this.canvasNode.height = Math.round(this.#cellSize*5+this.#cellOffset+4);
     this.canvasNode.style.width = clientWidth+'px';
+
+    console.log('this.canvasNode.width', this.canvasNode.width);
   }
 
 
@@ -114,6 +139,16 @@ export class Bingo37 {
     this.#currentPriceOfChip = e.target.getAttribute('data-chip-price');
   }
 
+  /**
+  * This function removes all chips from the table
+  * @method removeAllChips
+  * @memberof Bingo37
+  * @returns {void}
+  */
+  #removeAllChips() {
+    this.#context.clearRect(0, 0, this.canvasNode.width, this.canvasNode.height);
+    this.#context.putImageData(this.#betHistory[0], 0, 0);
+  }
 
 
   /**
@@ -125,6 +160,7 @@ export class Bingo37 {
   #buttonUndoOnClick() {
     if (this.#betHistory.length) {
       // delete last bet from #allBetsArr and finalListOfBets
+      this.#renderedChips.pop();
       let lastBet = this.#allBetsArr.pop();
       this.finalListOfBets.forEach((betItem, index) => {
         if(this.#compare(betItem.bet, lastBet)) {
@@ -135,7 +171,15 @@ export class Bingo37 {
       })
       // clear canvas and set previous stamp
       this.#context.clearRect(0, 0, this.canvasNode.width, this.canvasNode.height);
-      this.#context.putImageData(this.#betHistory.pop(), 0, 0);
+      if(this.#betHistory.length == 1) {
+        this.#context.putImageData(this.#betHistory[0], 0, 0);
+      } else {
+        this.#context.putImageData(this.#betHistory.pop(), 0, 0);
+      }
+
+
+      let event = new Event("sumchanged", {bubbles: true});
+      this.gameContainer.dispatchEvent(event);
     }
   }
 
@@ -152,10 +196,14 @@ export class Bingo37 {
       // clear #allBetsArr and finalListOfBets
       this.#allBetsArr = [];
       this.finalListOfBets = [];
+      this.#renderedChips = [];
       // clear canvas and set fitst stamp
       this.#context.clearRect(0, 0, this.canvasNode.width, this.canvasNode.height);
       this.#context.putImageData(this.#betHistory[0], 0, 0);
       this.#betHistory = [this.#betHistory[0]];
+
+      let event = new Event("sumchanged", {bubbles: true});
+      this.gameContainer.dispatchEvent(event);
     }
   }
 
@@ -170,10 +218,19 @@ export class Bingo37 {
   #generateControls(){
     let controlsDiv = document.createElement('div');
 
+    // container for chips
+    let controlsChipsContainer = document.createElement('div');
+    controlsChipsContainer.className = "chips";
+
     let chip, price;
-    for (var i = 0; i < 2; i++) {
+    for (var i = 0; i < 5; i++) {
       // select price for chip
-      price = (i == 0) ? 10 : (i == 1) ? 50 : 10;
+      if(i==0) price = 10;
+      if(i==1) price = 50;
+      if(i==2) price = 100;
+      if(i==3) price = 500;
+      if(i==4) price = 1000;
+      this.#chipsPrices.push(price);
       // create chip image
       chip = new Image();
       chip.src = './public/games/bingo37/img/chip'+price+'.png';
@@ -184,20 +241,30 @@ export class Bingo37 {
       // set click listner
       chip.onclick = (e) => this.#chipOnClick(e);
 
-      controlsDiv.appendChild(chip);
+      controlsChipsContainer.appendChild(chip);
     }
+
+    // container for buttons
+    let controlsButtonContainer = document.createElement('div');
+    controlsButtonContainer.className = "buttons";
 
     // create UnDo button
     let buttonUndo = document.createElement('button');
     buttonUndo.innerHTML = 'Отменить';
     buttonUndo.onclick = () => this.#buttonUndoOnClick();
-    controlsDiv.appendChild(buttonUndo);
+    controlsButtonContainer.appendChild(buttonUndo);
 
     // create Clear button
     let buttonClear = document.createElement('button');
     buttonClear.innerHTML = 'Очистить';
     buttonClear.onclick = () => this.#buttonClearOnClick();
-    controlsDiv.appendChild(buttonClear);
+    controlsButtonContainer.appendChild(buttonClear);
+
+    // append to controlsDiv
+    controlsDiv.appendChild(controlsChipsContainer);
+    controlsDiv.appendChild(controlsButtonContainer);
+
+    controlsDiv.className = "controls";
 
     // draw DOM elements in game-container
     this.gameContainer.appendChild(controlsDiv);
@@ -206,37 +273,72 @@ export class Bingo37 {
 
 
   /**
-  * This function generates a game table. Now it's 3 square!
+  * This function generates a game table.
   * @method generateTable
   * @memberof Bingo37
   * @returns {void}
   */
   #generateTable() {
     let cellNumber = 0;
-    let offset, textX, textY;
+    let sizeReduction = 0.1;
+    let offset, textX, textY, x, y;
 
     // set styles for table draw
-    this.#context.fillStyle = "#FF0000";
+    this.#context.fillStyle = "#EDEFEF";
+    this.#context.strokeStyle = "#001A35";
     this.#context.lineWidth = 4; // 4x resolution
     this.#context.textAlign = "center";
     this.#context.textBaseline = "middle";
-    this.#context.font = (this.#cellSize)/2+"px serif";
+    this.#context.font = (this.#cellSize)/3+"px sans-serif";
+    this.#context.save();
+
+
+    // draw Bingo37 field
+    this.#context.strokeRect(0, 0, this.#cellSize, this.#cellSize*3);
+    this.#context.translate(Math.round(this.#cellSize/2), Math.round(this.#cellSize*3/2));
+    this.#context.textAlign = "center";
+    this.#context.rotate(-Math.PI/ 2)
+    this.#context.fillText("Bingo37", 0, 0);
+    this.#availableAreasForBets.push({num: 37, xMin: 0, yMin: 0, xMax: this.#cellSize, yMax: 0+this.#cellSize*3});
+
+    this.#context.restore();
 
     // draw 1-st square of numbers
-    for (let x = 0; x < this.#cellSize*4; x += this.#cellSize) {
-      for (let y = this.#cellSize*2; y >= 0; y -= this.#cellSize) {
+    offset = Math.round(this.#cellSize+this.#cellOffset);
+    for (x = offset; x < this.#cellSize*4+offset; x += this.#cellSize) {
+      for (y = this.#cellSize*2; y >= 0; y -= this.#cellSize) {
         this.#context.strokeRect(x, y, this.#cellSize, this.#cellSize);
         textX = x + (this.#cellSize)/2;
         textY = y + (this.#cellSize)/2;
         this.#context.fillText(++cellNumber, textX, textY);
         this.#availableAreasForBets.push({num: cellNumber, xMin: x, yMin: y, xMax: x+this.#cellSize, yMax: y+this.#cellSize});
       }
+    }
+
+    // draw 1-12 under 1-st square of numbers
+    x = offset;
+    y = Math.round(this.#cellSize*3+this.#cellOffset/2);
+    this.#context.strokeRect(x, y, this.#cellSize*4, this.#cellSize);
+    textX = x + (this.#cellSize)*2;
+    textY = y + (this.#cellSize)/2;
+    this.#context.fillText("1-12", textX, textY);
+    this.#availableAreasForBets.push({num: [1,2,3,4,5,6,7,8,9,10,11,12], xMin: x, yMin: y, xMax: x+this.#cellSize*4, yMax: y+this.#cellSize});
+
+    // draw "select a row of the 1-st square"
+    offset = Math.round(offset + this.#cellSize*4+this.#cellOffset/2);
+    x = offset;
+    let cellsValues = [[1,4,7,10],[2,5,8,11],[3,6,9,12]];
+    let i = 0;
+    for (y = Math.round(this.#cellSize*2 + this.#cellSize*sizeReduction); y >= 0; y -= this.#cellSize) {
+      this.#context.strokeRect(x, y, Math.round(this.#cellSize - this.#cellSize*sizeReduction*2), Math.round(this.#cellSize - this.#cellSize*sizeReduction*2));
+      this.#availableAreasForBets.push({num: cellsValues[i], xMin: x, yMin: y, xMax: Math.round(x+this.#cellSize - this.#cellSize*sizeReduction*2), yMax: Math.round(y+this.#cellSize - this.#cellSize*sizeReduction*2)});
+      i++;
     }
 
     // draw 2-nd square of numbers
-    offset = this.#cellSize*4+this.#cellOffset;
-    for (let x = offset; x < offset+this.#cellSize*4; x += this.#cellSize) {
-      for (let y = this.#cellSize*2; y >= 0; y -= this.#cellSize) {
+    offset = Math.round(offset + this.#cellSize + this.#cellOffset);
+    for (x = offset; x < offset+this.#cellSize*4; x += this.#cellSize) {
+      for (y = this.#cellSize*2; y >= 0; y -= this.#cellSize) {
         this.#context.strokeRect(x, y, this.#cellSize, this.#cellSize);
         textX = x + (this.#cellSize)/2;
         textY = y + (this.#cellSize)/2;
@@ -245,10 +347,30 @@ export class Bingo37 {
       }
     }
 
+    // draw 13-23 under 2-nd square of numbers
+    x = offset;
+    y = this.#cellSize*3+this.#cellOffset/2;
+    this.#context.strokeRect(x, y, this.#cellSize*4, this.#cellSize);
+    textX = x + (this.#cellSize)*2;
+    textY = y + (this.#cellSize)/2;
+    this.#context.fillText("13-24", textX, textY);
+    this.#availableAreasForBets.push({num: [13,14,15,16,17,18,19,20,21,22,23,24], xMin: x, yMin: y, xMax: x+this.#cellSize*4, yMax: y+this.#cellSize});
+
+    // draw "select a row of the 2-nd square"
+    offset = Math.round(offset + this.#cellSize*4 + this.#cellOffset/2);
+    x = offset;
+    cellsValues = [[13,16,19,22],[14,17,20,23],[15,18,21,24]];
+    i = 0;
+    for (y = Math.round(this.#cellSize*2 + this.#cellSize*sizeReduction); y >= 0; y -= this.#cellSize) {
+      this.#context.strokeRect(x, y, Math.round(this.#cellSize - this.#cellSize*sizeReduction*2), Math.round(this.#cellSize - this.#cellSize*sizeReduction*2));
+      this.#availableAreasForBets.push({num: cellsValues[i], xMin: x, yMin: y, xMax: Math.round(x+this.#cellSize - this.#cellSize*sizeReduction*2), yMax: Math.round(y+this.#cellSize - this.#cellSize*sizeReduction*2)});
+      i++;
+    }
+
     // draw 3-rd square of numbers
-    offset = offset*2;
-    for (let x = offset; x < offset+this.#cellSize*4; x += this.#cellSize) {
-      for (let y = this.#cellSize*2; y >= 0; y -= this.#cellSize) {
+    offset = Math.round(offset+ this.#cellSize+this.#cellOffset);
+    for (x = offset; x < offset+this.#cellSize*4; x += this.#cellSize) {
+      for (y = this.#cellSize*2; y >= 0; y -= this.#cellSize) {
         this.#context.strokeRect(x, y, this.#cellSize, this.#cellSize);
         textX = x + (this.#cellSize)/2;
         textY = y + (this.#cellSize)/2;
@@ -256,6 +378,82 @@ export class Bingo37 {
         this.#availableAreasForBets.push({num: cellNumber, xMin: x, yMin: y, xMax: x+this.#cellSize, yMax: y+this.#cellSize});
       }
     }
+
+    // draw 25-36 under 3-rd square of numbers
+    x = offset;
+    y = this.#cellSize*3+this.#cellOffset/2;
+    this.#context.strokeRect(x, y, this.#cellSize*4, this.#cellSize);
+    textX = x + (this.#cellSize)*2;
+    textY = y + (this.#cellSize)/2;
+    this.#context.fillText("25-36", textX, textY);
+    this.#availableAreasForBets.push({num: [25,26,27,28,29,30,31,32,33,34,35,36], xMin: x, yMin: y, xMax: x+this.#cellSize*4, yMax: y+this.#cellSize});
+
+    // draw "select a row of the 3-rd square"
+    offset = Math.round(offset + this.#cellSize*4 + this.#cellOffset/2);
+    x = offset;
+    cellsValues = [[25,28,21,34],[26,29,32,35],[27,30,33,36]];
+    i = 0;
+    for (y = Math.round(this.#cellSize*2 + this.#cellSize*sizeReduction); y >= 0; y -= this.#cellSize) {
+      this.#context.strokeRect(x, y, Math.round(this.#cellSize - this.#cellSize*sizeReduction*2), Math.round(this.#cellSize - this.#cellSize*sizeReduction*2));
+      this.#availableAreasForBets.push({num: cellsValues[i], xMin: x, yMin: y, xMax: Math.round(x+this.#cellSize - this.#cellSize*sizeReduction*2), yMax: Math.round(y+this.#cellSize - this.#cellSize*sizeReduction*2)});
+      i++;
+    }
+
+    this.#context.save();
+    this.#context.font = (this.#cellSize)/3+"px sans-serif";
+
+    // draw line-1
+    offset = Math.round(offset+ this.#cellSize+this.#cellOffset);
+    x = offset;
+    y = Math.round(this.#cellSize*sizeReduction);
+    this.#context.strokeRect(x, y, this.#cellSize*2, Math.round(this.#cellSize - this.#cellSize*sizeReduction*2));
+    textX = x + (this.#cellSize);
+    textY = Math.round(y + (this.#cellSize - this.#cellSize*sizeReduction*2)/2);
+    this.#context.fillText('Line 1', textX, textY);
+    this.#availableAreasForBets.push({num: [3,6,9,12,15,18,21,24,27,30,33,36], xMin: x, yMin: y, xMax: x+this.#cellSize*2, yMax: Math.round(y+this.#cellSize - this.#cellSize*sizeReduction*2)});
+
+    // draw line-2
+    x = offset;
+    y = Math.round(this.#cellSize+this.#cellSize*sizeReduction);
+    this.#context.strokeRect(x, y, this.#cellSize*2, Math.round(this.#cellSize - this.#cellSize*sizeReduction*2));
+    textX = x + (this.#cellSize);
+    textY = Math.round(y + (this.#cellSize - this.#cellSize*sizeReduction*2)/2);
+    this.#context.fillText('Line 2', textX, textY);
+    this.#availableAreasForBets.push({num: [2,5,8,11,14,17,20,23,26,29,32,35], xMin: x, yMin: y, xMax: x+this.#cellSize*2, yMax: Math.round(y+this.#cellSize - this.#cellSize*sizeReduction*2)});
+
+    // draw line-3
+    x = offset;
+    y = Math.round(this.#cellSize*2 + this.#cellSize*sizeReduction);
+    this.#context.strokeRect(x, y, this.#cellSize*2, Math.round(this.#cellSize - this.#cellSize*sizeReduction*2));
+    textX = x + (this.#cellSize);
+    textY = Math.round(y + (this.#cellSize - this.#cellSize*sizeReduction*2)/2);
+    this.#context.fillText('Line 3', textX, textY);
+    this.#availableAreasForBets.push({num: [1,4,7,10,13,16,19,22,25,28,31,34], xMin: x, yMin: y, xMax: x+this.#cellSize*2, yMax: Math.round(y+this.#cellSize - this.#cellSize*sizeReduction*2)});
+    
+    this.#context.restore();
+
+
+    // draw 1-18
+    offset = Math.round(this.#cellSize+this.#cellOffset+this.#cellSize*4-this.#cellOffset);
+    x = offset;
+    y = this.#cellSize*4+this.#cellOffset;
+    this.#context.strokeRect(x, y, this.#cellSize*4, this.#cellSize);
+    textX = x + (this.#cellSize)*2;
+    textY = Math.round(y + (this.#cellSize)/2);
+    this.#context.fillText("1-18", textX, textY);
+    this.#availableAreasForBets.push({num: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18], xMin: x, yMin: y, xMax: x+this.#cellSize*4, yMax: y+this.#cellSize});
+
+    // draw 19-36
+    x = Math.round(offset+this.#cellSize*4+this.#cellOffset);
+    y = this.#cellSize*4+this.#cellOffset;
+    this.#context.strokeRect(x, y, this.#cellSize*4, this.#cellSize);
+    textX = x + (this.#cellSize)*2;
+    textY = y + (this.#cellSize)/2;
+    this.#context.fillText("19-36", textX, textY);
+    this.#availableAreasForBets.push({num: [19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36], xMin: x, yMin: y, xMax: x+this.#cellSize*4, yMax: y+this.#cellSize});
+  
+    // create history stamp
+    this.#betHistoryCreateStamp();
   }
 
 
@@ -288,7 +486,7 @@ export class Bingo37 {
       if(x >= item.xMin && x <= item.xMax && y >= item.yMin && y <= item.yMax) {
 
         // create history stamp
-        this.#betHistoryCreateStamp();
+        if(this.#allBetsArr.length > 0) this.#betHistoryCreateStamp();
 
         // coordinates relative to the cell (not the table)
         XRelativeCell = x - item.xMin;
@@ -303,13 +501,14 @@ export class Bingo37 {
         clickArr.push(item.num);
 
         // new chip coordinates
-        let newX = item.xMin + adjacentCellsWithChipOffset.offsetX + (this.#cellSize)/5*1;
-        let newY = item.yMin + adjacentCellsWithChipOffset.offsetY + (this.#cellSize)/5*1;
-        // draw chip
-        this.#context.drawImage(this.#chips[this.#currentNumberOfChip], newX, newY, (this.#cellSize)/5*3, (this.#cellSize)/5*3);
+        let newX = Math.round(item.xMin + adjacentCellsWithChipOffset.offsetX + (item.xMax-item.xMin - this.#cellSize/5*3)/2);
+        let newY = Math.round(item.yMin + adjacentCellsWithChipOffset.offsetY + (item.yMax-item.yMin - this.#cellSize/5*3)/2);
 
+        // [[2,3,..]] => [2,3,...]
+        if(typeof clickArr[0] === 'object') clickArr = clickArr[0];
 
         clickArr.sort(this.#compareNumericSortMethod);
+
         this.#allBetsArr.push(clickArr);
 
         // add new bet to finalListOfBets
@@ -318,14 +517,51 @@ export class Bingo37 {
             if(this.#compare(betItem.bet, clickArr)) {
               betItem.count++;
               betItem.money.push(+this.#currentPriceOfChip);
+              let sum = betItem.money.reduce((sum, current) => sum + current, 0);
+
+              // remove all chips
+              this.#removeAllChips();
+              // draw
+              //this.#renderedChips.forEach((chip, index) => {
+              for (var i = 0; i < this.#renderedChips.length; i++) {
+                if(!this.#compare(this.#renderedChips[i].bet,clickArr)) {
+                  this.#context.drawImage(this.#renderedChips[i].img, this.#renderedChips[i].x, this.#renderedChips[i].y, this.#renderedChips[i].width, this.#renderedChips[i].height);
+                } else {
+                  this.#renderedChips.splice(i,1);
+                  i--;
+                }
+              }
+              // new chips for this bet
+              let n;
+              for (let i = this.#chipsPrices.length-1; i >= 0; i--) {
+                // get bigger 
+                n = Math.floor(sum/this.#chipsPrices[i]);
+                sum -= this.#chipsPrices[i]*n;
+                for (; n > 0; n--) {
+                  // draw chip
+                  this.#renderedChips.push({bet: clickArr, img: this.#chips[i], x: newX, y: newY, width: (this.#cellSize)/5*3, height: (this.#cellSize)/5*3});
+                  this.#context.drawImage(this.#chips[i], newX, newY, (this.#cellSize)/5*3, (this.#cellSize)/5*3);
+                  newY -= (this.#cellSize)/20;
+                  console.log('newY', newY);
+                }
+              }
             }
           })
         } else {
           this.finalListOfBets.push({bet: clickArr, money: [+this.#currentPriceOfChip], count: 1});
+          this.#renderedChips.push({bet: clickArr, img: this.#chips[this.#currentNumberOfChip], x: newX, y: newY, width: (this.#cellSize)/5*3, height: (this.#cellSize)/5*3});
+          // draw chip
+          this.#context.drawImage(this.#chips[this.#currentNumberOfChip], newX, newY, (this.#cellSize)/5*3, (this.#cellSize)/5*3);
         }
+
+
+        let event = new Event("sumchanged", {bubbles: true});
+        this.gameContainer.dispatchEvent(event);
+
 
         console.log('betArr', this.#allBetsArr);
         console.log('betArrCount', this.finalListOfBets);
+
 
       }
     });
@@ -413,6 +649,124 @@ export class Bingo37 {
 
     return {cells: clickArr, offsetX: offsetX, offsetY: offsetY};
   } // end of #lookingForAnAdjacentCell
+
+
+
+  /**
+  * This function works with sockets (data exchange with the server)
+  * @method sockets
+  * @memberof Bingo37
+  * @return {void}
+  */
+  #sockets() {
+    let socket = io('/bingo37');
+    // on connect send socket id
+    socket.on('connect', () => {
+      let socketID = socket.id;
+      socket.emit( 'setSocketId', {
+        socketID: socketID
+      } );
+    });
+
+    socket.on('bingo37_Game fell-out-last', (msg) => {
+      console.log('fell-out-last', msg.nums);
+      let lastNumbers = '';
+
+      if(this.#tableIsBlocked) {
+        for (let i = 0; i < msg.nums.length; i++) {
+          lastNumbers += '<span>'+msg.nums[i]+'</span>';
+        }
+      } else {
+        this.externalCounters.currentNumber.innerHTML = '<span>'+msg.nums[0]+'</span>';
+        for (let i = 1; i < msg.nums.length; i++) {
+          lastNumbers += '<span>'+msg.nums[i]+'</span>';
+        }
+      }
+      
+      this.externalCounters.lastNumbers.innerHTML = lastNumbers;
+    })
+
+
+
+    socket.on('bingo37_Game raffle-is-completed', (msg) => {
+      console.log(msg);
+      this.externalCounters.step.innerHTML = msg.text;
+      this.externalCounters.time.innerHTML = msg.timeLeft;
+      this.externalCounters.currentNumber.innerHTML = '<span>'+msg.num+'</span>'
+
+      this.#availableAreasForBets.forEach((item) => {
+        if(item.num == msg.num) {
+          this.#context.save();
+          this.#context.fillStyle = "#EB1E66";
+          this.#context.strokeStyle = "#EB1E66";
+          this.#context.lineWidth = 8; // 4x resolution
+          this.#context.strokeRect(item.xMin, item.yMin, item.xMax-item.xMin, item.yMax-item.yMin);
+          this.#context.restore();
+        }
+      })
+
+    })
+
+    socket.on('bingo37_Game raffle-in-process', (msg) => {
+      console.log(msg);
+      this.externalCounters.step.innerHTML = msg.text;
+      this.externalCounters.time.innerHTML = msg.timeLeft;
+      this.#tableIsBlocked = true;
+
+      // add current num to last
+      if(this.externalCounters.currentNumber.innerHTML) {
+        this.externalCounters.lastNumbers.insertAdjacentHTML('afterbegin', this.externalCounters.currentNumber.innerHTML);
+        this.externalCounters.currentNumber.innerHTML = '';
+        this.externalCounters.lastNumbers.removeChild(this.externalCounters.lastNumbers.lastElementChild);
+      }
+      
+    })
+
+    socket.on('bingo37_Game raffle-starts', (msg) => {
+      console.log(msg);
+      this.externalCounters.step.innerHTML = msg.text;
+      this.externalCounters.time.innerHTML = msg.timeLeft;
+      // block table
+      this.#tableIsBlocked = true;
+      // send bets
+      socket.emit('bingo37_Game send-bets', this.getBets);
+
+      // add current num to last
+      this.externalCounters.lastNumbers.insertAdjacentHTML('afterbegin', this.externalCounters.currentNumber.innerHTML);
+      this.externalCounters.currentNumber.innerHTML = '';
+      this.externalCounters.lastNumbers.removeChild(this.externalCounters.lastNumbers.lastElementChild);
+    })
+
+    socket.on('bingo37_Game accepting-bids-ends', (msg) => {
+      console.log(msg);
+      this.externalCounters.step.innerHTML = msg.text;
+      this.externalCounters.time.innerHTML = msg.timeLeft;
+    })
+
+    socket.on('bingo37_Game accepting-bids', (msg) => {
+      console.log(msg);
+      this.externalCounters.step.innerHTML = msg.text;
+      this.externalCounters.time.innerHTML = msg.timeLeft;
+    })
+
+    socket.on('bingo37_Game accepting-bids-starts', (msg) => {
+      console.log(msg);
+      // block table
+      this.#tableIsBlocked = false;
+
+      this.externalCounters.win.innerHTML = '0';
+
+      this.#buttonClearOnClick();
+      this.externalCounters.step.innerHTML = msg.text;
+      this.externalCounters.time.innerHTML = msg.timeLeft;
+    })
+
+    socket.on('bingo37_Game your-win', (msg) => {
+      console.log(msg);
+      this.externalCounters.win.innerHTML = msg.win;
+    })
+  }
+
 
 
 } // end of class

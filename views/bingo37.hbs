@@ -1,10 +1,109 @@
-<div id="game-container">
-	<canvas></canvas>
+<style>
+	* {
+		padding: 0;
+		margin: 0;
+		box-sizing: border-box;
+	}
+	html,body {
+		width: 100%;
+		height: 100%;
+	}
+	.container {
+		display: flex;
+		height: 100%;
+	}
+	.sidebar {
+		width: 20%;
+		background: #001A35;
+		color: #fff;
+	}
+	.main {
+		padding: 3em;
+		width: 80%;
+	}
+	#game-container {
+		width: 100%;
+		background: #000C26;
+	}
+	#game-container canvas {
+		width: inherit;
+	}
+	#game-container .controls {
+		padding-top: 1.5em;
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+	#game-container .controls img {
+		width: 16%;
+	}
+	body {
+		background: #000C26;
+	}
+
+	.fell-out-numbers {
+		display: flex;
+	}
+
+	.fell-out-numbers .current {
+		width: 20%;
+		display: flex;
+		justify-content: center;
+		align-items: center;
+	}
+
+	.fell-out-numbers .last {
+		background: #001A35;
+		display: flex;
+		width: 80%;
+		overflow: hidden;
+	}
+	.fell-out-numbers span {
+		color: #fff;
+		padding: 1em;
+	}
+</style>
+
+
+<div class="fell-out-numbers">
+	<div class="current" data-fell-out-current></div>
+	<div class="last" data-fell-out-last></div>
+</div>
+<div class="container">
+	<div class="sidebar">
+		<div class="bet">
+			<span>Ставка:</span>
+			<div>
+				<span data-bet>0</span>
+			</div>
+		</div>
+		<div class="win">
+			<span>Выигрыш:</span>
+			<div>
+				<span data-win>0</span>
+			</div>
+		</div>
+		<div class="step">
+			<span>Этап игры:</span>
+			<div>
+				<span data-step></span>
+			</div>
+		</div>
+		<div class="time">
+			<span>Осталось:</span>
+			<div>
+				<span data-time></span>
+			</div>
+		</div>
+	</div>
+	<div class="main">
+		<div id="game-container">
+			<canvas></canvas>
+		</div>
+	</div>
+	
 </div>
 
-<button id="send">Отправить ставки</button>
-<div id="results"></div>
-<div id="sended"></div>
 
 <script src="./public/bundle.js"></script>
 <script src="./public/games/bingo37/js/bundle.js"></script>
